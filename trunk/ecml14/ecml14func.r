@@ -369,10 +369,10 @@ create_fold = function(datamatrix,rows=1:datamatrix$n,name_suffix="",name=paste(
   }
   f$split = function(n_folds,
                      proportions=rep(1,n_folds),
-         sizes=calc_sizes_towards_target(f$n,0,proportions),
-         fold_name_suffices=paste(".fold.",1:n_folds,".of.",n_folds,sep=""),
-         fold_names=paste(f$name,fold_name_suffices,sep=""),
-         stratified=FALSE,task=NA) {
+		     sizes=calc_sizes_towards_target(f$n,0,proportions),
+		     fold_name_suffices=paste(".fold.",1:n_folds,".of.",n_folds,sep=""),
+		     fold_names=paste(f$name,fold_name_suffices,sep=""),
+		     stratified=FALSE,task=NA) {
     if (sum(sizes)>f$n) {
       stop("'sizes' must not sum up to more than the total number of instances in the input fold")
     }
@@ -518,10 +518,10 @@ train_lr = function(trainfold,task,code,code_cols=1:code$n_cols) {
   train_rows = trainfold$rows;
   for (i in 1:length(code_cols)) {
 
-    
-    bootstrap_rows = sample(train_rows,replace=T);
-    trainfold$rows = bootstrap_rows;  
-    # print(trainfold$rows[1:5])
+  	
+  	bootstrap_rows = sample(train_rows,replace=T);
+  	trainfold$rows = bootstrap_rows;  
+  	# print(trainfold$rows[1:5])
 
     train_data = trainfold$extract(code=code,code_col=code_cols[i],label_name="Y",posneg=c(1,0))
     # print(train_data[1:5])
