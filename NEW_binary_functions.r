@@ -12,6 +12,7 @@ library(RWeka)
 library(RColorBrewer)
 library(mvtnorm)
 library(np)
+library(randomForest)
 
 create_normal_distr = function(name,features,mu,sigma) {
   distr = new.env() 
@@ -466,8 +467,16 @@ create_ecoc = function(task,type=c("1vsRest","1vs1","custom")[1],custom_mat=NA) 
       stop("each column in the code matrix must contain both -1 and +1")
     }
     mat = custom_mat
+  } else if (type=="binary"){ ### NEW
+    n_models=3; ### svm, lr, rf
+    # for(i in 1:n_models){
+    for(i in 1:ensemble_size){ 
+      col = c(+1,-1);
+      mat=cbind(mat,col);
+      colnames(mat)[length(colnames(mat))] = paste("sample",i,sep="")
+    }
   } else {
-    stop("'1vsRest','1vs1' and 'custom' are the only allowed values for type")
+    stop("'1vsRest','1vs1','custom' and 'binary' are the only allowed values for type")
   }
   rownames(mat) = classes_factor
   code$task = task
@@ -552,7 +561,13 @@ logistic = function(x) 1/(1+exp(-x))
 train_svm = function(trainfold,task,code,code_cols=1:code$n_cols,kernel="polynomial",degree=3,type="C-classification") {
   features = list()
   models = list()
+
+  train_rows = trainfold$rows;
   for (i in 1:length(code_cols)) {
+
+    bootstrap_rows = sample(train_rows,replace=T);
+    trainfold$rows = bootstrap_rows;  
+
     train_data = trainfold$extract(code=code,code_col=code_cols[i],label_name="Y",posneg=factor(c("+","-")))
     n_features = ncol(train_data)-1
     feature_names = colnames(train_data)[1:n_features] # paste("X",1:n_features,sep="")
@@ -570,6 +585,47 @@ train_svm = function(trainfold,task,code,code_cols=1:code$n_cols,kernel="polynom
     }
     features[[i]] = tmp_create_feature(model)
   }
+  trainfold$rows = train_rows;
+  return(features)
+}
+
+train_rf = function(trainfold,task,code,code_cols=1:code$n_cols) {
+  features = list()
+  models = list()
+
+  train_rows = trainfold$rows;
+  for (i in 1:length(code_cols)) {
+
+    
+    bootstrap_rows = sample(train_rows,replace=T);
+    trainfold$rows = bootstrap_rows;  
+    # print(trainfold$rows[1:5])
+
+    train_data = trainfold$extract(code=code,code_col=code_cols[i],label_name="Y",posneg=c(1,0))
+    train_data$Y = as.factor(train_data$Y);
+    # print(train_data[1:5])
+    # Sys.sleep(2);
+    n_features = ncol(train_data)-1
+    feature_names = colnames(train_data)[1:n_features] # paste("X",1:n_features,sep="")
+    # target_name = colnames(train_data)[n_features+1]
+    # formula = as.formula(paste("Y",paste(feature_names,collapse="+"),sep="~"))
+    # model = randomForest(train_data[,1:n_features],train_data[,ncol(train_data)])
+    model = randomForest(Y~.,train_data);
+    
+    tmp_create_feature = function(model) {
+      f = new.env()
+      f$model = model
+      f$calc = function(x) {
+        colnames(x) = feature_names
+        predict(f$model,x,type="prob")[,2]
+      }
+      f$n_inputs = n_features
+      f$n_outputs = 1
+      return(f)
+    }
+    features[[i]] = tmp_create_feature(model)
+  }
+  trainfold$rows = train_rows;
   return(features)
 }
 
@@ -802,6 +858,12 @@ err = function(x,y) {
   return(sum(x!=y)/length(x))
 }
 
+mse = function(x){
+  return(sum(x)/length(x))
+}
+
+
+
 which.unique = function(x) match(unique(x),x)
 
 plot_calrel = function(dm,prefix,ecoc,cols=1:ecoc$n_cols,calrel=".hrel") {
@@ -809,7 +871,7 @@ plot_calrel = function(dm,prefix,ecoc,cols=1:ecoc$n_cols,calrel=".hrel") {
   p = p + xlim(c(0,1))
   p = p + ylim(c(-0.02,1))
   for (i in cols) {
-    code = paste(prefix,".code",i,sep="")
+    code = paste(prefix,".sample",i,sep="")
     rel = paste(code,calrel,sep="")
     p = p + geom_line(aes_string(x=code,y=rel))
     ymin = min(dm$mat[,rel])-0.02

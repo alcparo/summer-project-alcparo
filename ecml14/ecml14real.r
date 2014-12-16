@@ -1,20 +1,27 @@
+
+# Part of software for the ECML'14 submission "Reliability maps: A tool to enhance probability estimates and improve classification accuracy"
+# Author: Meelis Kull, meelis.kull@bristol.ac.uk, meelis.kull@gmail.com
+# Written February-April 2014.
+# All rights reserved.
+
 args = commandArgs(trailingOnly = TRUE)
 dataset = as.character(args[1])
 bwcal = as.numeric(args[2])
 bwrel = as.numeric(args[3])
 approxbinsize = as.numeric(args[4])
 
-setwd("research/scripts/myresearch");
-dataset="diabetes_num";
-bwcal = 0.2;
-bwrel = 0.2;
-approxbinsize = 200;
-
-# NEW VARIABLES
-ensemble_size = 200;
-
+# dataset = "page-blocks"
+# dataset = "yeast"
+# dataset = "segment"
+# dataset = "sat"
+# dataset = "vehicle"    
+# dataset = "shuttle"     # actually arff has only train fold (Zhou had only test fold)
+# bwcal = 0.2
+# bwrel = 0.2
+# approxbinsize = 200
 
 fileprefix = paste(dataset,".bwc",bwcal,".bwr",bwrel,".bs",approxbinsize,sep="")
+
 polydegrees = list()
 polydegrees[["page-blocks"]] = 1
 polydegrees[["yeast"      ]] = 3
@@ -22,63 +29,58 @@ polydegrees[["segment"    ]] = 1
 polydegrees[["sat"        ]] = 1
 polydegrees[["vehicle"    ]] = 1
 polydegrees[["shuttle"    ]] = 2
-polydegrees[["data_banknote_authentication"    ]] = 1
-polydegrees[["diabetes_num"    ]] = 1
 
-source("binary_functions.r")
+# rewrite all this with pattern matching
+
+source("ecml14func.r")
 
 sink(paste(fileprefix,".stdout.txt",sep="."), append=FALSE, split=TRUE)
 
 set.seed(1)
 if (dataset=="sat") {
   arff = read.csv("sat.csv",sep=" ",header=FALSE)
-  } else if (dataset=="shuttle") {
-    arff = read.csv("shuttle.tst",sep=" ",header=FALSE)
-    } else {
-      arff = read.arff(file=paste(dataset,"arff",sep="."))
-    }
-
-    colnames(arff) = c(paste('f',1:(ncol(arff)-1),sep=""),'class') 
-# arff$class = as.numeric(as.factor(arff$class)) #### as.factor changing the values from (0,1) to (1,2)
-
+} else if (dataset=="shuttle") {
+  arff = read.csv("shuttle.tst",sep=" ",header=FALSE)
+} else {
+  arff = read.arff(file=paste(dataset,"arff",sep="."))
+}
+colnames(arff) = c(paste('f',1:(ncol(arff)-1),sep=""),'class')
+arff$class = as.numeric(as.factor(arff$class))
 dm = create_datamatrix(dataset)
 dm$add_instances(arff)
 task = create_task(dm,colnames(arff)[1:(ncol(arff)-1)],colnames(arff)[ncol(arff)])
 
-print(task$n_classes);
-if (task$n_classes<2) {
-  stop("does not work for less than 2 classes") ### new
-  } else if (task$n_classes>15) {
-    stop("does not work for more than 15 classes")
-    } else if(task$n_classes==2){ ### new
-     print('BINARY'); 
-     ecoc = create_ecoc(task,type="binary")
-     } else if (task$n_classes==3) {
-      ecoc = create_ecoc(task,type="1vsR")
-      } else {
-        if (task$n_classes==4) {
-          mat = read.csv("bch_n7_k4_t1_sum3_dist4_t.csv")
-          } else {
-            mat = read.csv("bch_n15_k5_t3_sum7_dist8_t.csv")
-          }
-          mat = 2*mat-1
-          colnames(mat) = paste("code",1:ncol(mat),sep="")
-          matrows = sample(1:task$n_classes,task$n_classes)
-          ecoc = create_ecoc(task,type="custom",custom_mat=as.matrix(mat[matrows,]))
-        }
+if (task$n_classes<3) {
+  stop("does not work for less than 3 classes")
+} else if (task$n_classes>15) {
+  stop("does not work for more than 15 classes")
+} else if (task$n_classes==3) {
+  ecoc = create_ecoc(task,type="1vsR")
+} else {
+  if (task$n_classes==4) {
+    mat = read.csv("bch_n7_k4_t1_sum3_dist4_t.csv")
+  } else {
+    mat = read.csv("bch_n15_k5_t3_sum7_dist8_t.csv")
+  }
+  mat = 2*mat-1
+  colnames(mat) = paste("code",1:ncol(mat),sep="")
+  matrows = sample(1:task$n_classes,task$n_classes)
+  ecoc = create_ecoc(task,type="custom",custom_mat=as.matrix(mat[matrows,]))
+}
 
-        map_func = function(x) ecoc$classes_factor[apply(x,1,which.max)]
+map_func = function(x) ecoc$classes_factor[apply(x,1,which.max)]
 
-        print('calculating ecoc labels...')
-        dm$add_feature(task$labels,ecoc$calc_labels,ecoc$n_cols,paste(task$labels,colnames(ecoc$mat),sep="."))
+print('calculating ecoc labels...')
+dm$add_feature(task$labels,ecoc$calc_labels,ecoc$n_cols,paste(task$labels,colnames(ecoc$mat),sep="."))
 
-        print('creating plan')
-        plan = data.frame()
+print('creating plan')
+plan = data.frame()
 # model_types = data.frame(names=c("svm")) #,learners=c(train_svm))
 # model_types = data.frame(names=c("lr")) #,learners=c(train_svm))
-# model_types = data.frame(names=c("svmpol","svmrad","lr")) #,learners=c(train_svm))
-model_types = data.frame(names=c("svmpol","lr","rf")) #,learners=c(train_svm)) ##### ADD THE LEARNING ALGORITHMS
-modcal_splits = data.frame(t(matrix(c(1,1234,1234),nrow=3)))
+model_types = data.frame(names=c("svmpol","svmrad","lr")) #,learners=c(train_svm))
+model_types = data.frame(names=c("svmpol","lr")) #,learners=c(train_svm))
+modcal_splits = data.frame(t(matrix(
+ c(1,1234,1234),nrow=3)))
 #   2,123 ,4   ,
 #   2,124 ,3   ,
 #   2,134 ,2   ,
@@ -105,9 +107,6 @@ folds = create_fold(dm)$split(10,proportions=rep(1,10),stratified=TRUE,task=task
 
 n_cols_before_cv = dm$m
 
-
-# cv=1
-
 for (cv in 1:10) {
 
   name1 = paste("cv",cv,sep="")
@@ -116,7 +115,6 @@ for (cv in 1:10) {
   train_fold = create_fold(dm,setdiff(1:dm$n,test_fold$rows),name="test")
   test_labels = dm$mat[test_fold$rows,task$labels]
 
-  # features normalization from 0..1
   norm_features = paste(name1,task$features,sep=".")
   for (i in 1:length(task$features)) {
     ff = dm$mat[train_fold$rows,task$features[i]]
@@ -132,93 +130,74 @@ for (cv in 1:10) {
   
   cv_folds = train_fold$split(4,proportions=c(1/4,1/4,1/4,1/4),stratified=TRUE,task=modtask,fold_names=1:4)
   split_folds = list()
-  for (sp in all_splits) {  ## ????????????? just one split fold?
+  for (sp in all_splits) {
     rows = vector()
     for (cv_fold_name in strsplit(paste(sp),NULL)[[1]]) {
       rows = c(rows,cv_folds[[cv_fold_name]]$rows)
     }
     split_folds[[paste(sp)]] = create_fold(dm,rows=rows,name=paste(sp)) #paste("cv",fold_name,sep="")) 
   }
-
-#ADD ALL learning algorithms
-  for (i2 in 1:nrow(model_types)) { #model_types = data.frame(names=c("svmpol","lr"))   #### ECOC COLUMNS
+  for (i2 in 1:nrow(model_types)) {
     name2 = paste(name1,model_types$names[i2],sep=".")
     print(name2)
-
-    ##BAGGING
-
     for (i3 in 1:nrow(modcalrel_splits)) {
       name3 = paste(name2,".s",i3,sep="")
       print(name3)
-
       mod_fold = split_folds[[paste(modcalrel_splits$mod[i3])]]
       cal_fold = split_folds[[paste(modcalrel_splits$cal[i3])]]
       rel_fold = split_folds[[paste(modcalrel_splits$rel[i3])]]
-      if (model_types$names[i2]=='svmrad') { ##### ALGORITHM LEARNING TYPE
+      if (model_types$names[i2]=='svmrad') {
         mod = train_svm(mod_fold,modtask,ecoc,kernel="radial")
       } else if (model_types$names[i2]=='svmpol') {
-        mod = train_svm(mod_fold,modtask,ecoc,1,kernel="polynomial",degree=polydegrees[[dataset]])
+        mod = train_svm(mod_fold,modtask,ecoc,kernel="polynomial",degree=polydegrees[[dataset]])
       } else if (model_types$names[i2]=='lr') {
         mod = train_lr(mod_fold,modtask,ecoc)
-      } else if (model_types$names[i2]=='rf') {
-        #####
-      } else { stop('unknown model class') } ### ADD ANOTHER LEARNING MODEL
-
+      } else { stop('unknown model class') }
       name4calvec = vector()
       name4relvec = vector()
       name4cvarvec = vector()
       name4csvarvec = vector()
       name4crelvarvec = vector()
-      
       for (i4 in 1:length(mod)) {
-        code_name = colnames(ecoc$mat)[i4]
+	code_name = colnames(ecoc$mat)[i4]
         name4 = paste(name3,code_name,sep=".")
-        print(name4)
-
-        name4cal = paste(name4,"hcal",sep=".")
-        name4var = paste(name4,"hvar",sep=".")
-        name4rel = paste(name4,"hrel",sep=".")
-
-        name4calvec[i4] = name4cal
-        name4relvec[i4] = name4rel
-        name4cvar = paste(name4,"cvar",sep=".")
-        name4csvar = paste(name4,"csvar",sep=".")
-        name4crelvar = paste(name4,"crelvar",sep=".")
-        name4cvarvec[i4] = name4cvar
-        name4csvarvec[i4] = name4csvar
-        name4crelvarvec[i4] = name4crelvar
-
+	print(name4)
+	name4cal = paste(name4,"hcal",sep=".")
+	name4var = paste(name4,"hvar",sep=".")
+	name4rel = paste(name4,"hrel",sep=".")
+	name4calvec[i4] = name4cal
+	name4relvec[i4] = name4rel
+	name4cvar = paste(name4,"cvar",sep=".")
+	name4csvar = paste(name4,"csvar",sep=".")
+	name4crelvar = paste(name4,"crelvar",sep=".")
+	name4cvarvec[i4] = name4cvar
+	name4csvarvec[i4] = name4csvar
+	name4crelvarvec[i4] = name4crelvar
         label_col = paste(modtask$labels,code_name,sep=".")
 
-        print("calculating model output...") ### predictions
+	print("calculating model output...")
         dm$add_feature(modtask$features,mod[[i4]]$calc,1,name4)
 
-        print("calibration map from labels...")  
-        cal_map = calibration_map_learner(cal_fold,name4,label_col,cal_reg_learner)
-        dm$add_feature(name4,cal_map,1,name4cal)
+        print("calibration map from labels...")
+	cal_map = calibration_map_learner(cal_fold,name4,label_col,cal_reg_learner)
+	dm$add_feature(name4,cal_map,1,name4cal)
 
         print("reliability map from labels...")
-        rel_map = reliability_from_labels_learner(rel_fold,modtask$features,name4,name4cal,label_col,rel_reg_learner,rel_clust_learner)
+	rel_map = reliability_from_labels_learner(rel_fold,modtask$features,name4,name4cal,label_col,rel_reg_learner,rel_clust_learner)
         dm$add_feature(name4,rel_map,1,name4rel)
-        
-        print("const var...")
-        dm$add_feature(c(name4cal,name4rel),function(x) (1-x[,2])*x[,1]*(1-x[,1]),1,name4var)
-        cvar = mean(dm$mat[rel_fold$rows,name4var])
-        csvar = (mean(sqrt(dm$mat[rel_fold$rows,name4var])))^2
-        crel = mean(dm$mat[rel_fold$rows,name4rel])
-        dm$add_feature(c(),function(x) cvar,1,name4cvar)
-        dm$add_feature(c(),function(x) csvar,1,name4csvar)
-        dm$add_feature(name4cal,function(x) (1-crel)*x*(1-x),1,name4crelvar)
- 
 
-      } ### END i4
-
-      #### PLOTTING AND LS-ECOC COMPUTING
-      #### CHANGE THIS TO VOTING OR MEAN FOR EACH ECOC CODE
-
-      print("plotting calibration and reliability maps")
-      ggsave(paste(dataset,name3,"cal.pdf",sep="."),plot_calrel(dm,name3,ecoc,calrel=".hcal"),width=5,height=5)
-      ggsave(paste(dataset,name3,"rel.pdf",sep="."),plot_calrel(dm,name3,ecoc,calrel=".hrel"),width=5,height=5)
+	print("const var...")
+	dm$add_feature(c(name4cal,name4rel),function(x) (1-x[,2])*x[,1]*(1-x[,1]),1,name4var)
+	cvar = mean(dm$mat[rel_fold$rows,name4var])
+	csvar = (mean(sqrt(dm$mat[rel_fold$rows,name4var])))^2
+	crel = mean(dm$mat[rel_fold$rows,name4rel])
+	dm$add_feature(c(),function(x) cvar,1,name4cvar)
+	dm$add_feature(c(),function(x) csvar,1,name4csvar)
+	dm$add_feature(name4cal,function(x) (1-crel)*x*(1-x),1,name4crelvar)
+      }
+#      print("plotting calibration and reliability maps")
+#      ggsave(paste(dataset,name3,"cal.pdf",sep="."),plot_calrel(dm,name3,ecoc,calrel=".hcal"),width=5,height=5)
+#      ggsave(paste(dataset,name3,"rel.pdf",sep="."),plot_calrel(dm,name3,ecoc,calrel=".hrel"),width=5,height=5)
       print("ls-ecoc with hcal...")
       name_prob = paste(name3,"lsecoc",ecoc$classes_factor,sep=".")
       name_map = paste(name3,"lsecoc","map",sep=".")
@@ -248,10 +227,8 @@ for (cv in 1:10) {
       name_map = paste(name3,"lsecocr","map",sep=".")
       dm$add_feature(c(name4calvec,name4relvec),function(x) ecoc$ls_ecoc_r(x[,1:(ncol(x)/2)],x[,(ncol(x)/2+1):(ncol(x))]),modtask$n_classes,name_prob)
       dm$add_feature(name_prob,map_func,1,name_map)
-      
-      
-    } ### END i3
 
+    }
     for (i3 in 1:n_methods) {
       name3 = paste(name2,".m",i3,sep="")
       print(name3)
@@ -279,22 +256,18 @@ for (cv in 1:10) {
         mat_map = dm$mat[test_fold$rows,name4map]
         err_res[[name4]] = err(mat_map,test_labels)
       }
-    } ### END i3
-
+    }
     d = data.frame(method=names(err_res),err=as.numeric(err_res))
     d = d[order(d$err),]
     print(d)
     print('---')
-
-
-  } ### END i2
-
+  }
   dm$delete_features((n_cols_before_cv+1):dm$m)
   write.csv(d,file=paste(fileprefix,".tmp.results.csv",sep=""),quote=FALSE,row.names=FALSE)
   
-} ### END CV
+}
 
 write.csv(d,file=paste(fileprefix,".results.csv",sep=""),quote=FALSE,row.names=FALSE)
 
-file_path =  gsub(paste(paste("~/ecml14experiments/",Sys.time(),sep=""),fileprefix,"rdata",sep="."), pattern=" ", replacement=".")
-save.image(file_path);
+#save.image(paste("~/ecml14experiments/2014_04_17_realfinal2",fileprefix,"rdata",sep="."))
+
